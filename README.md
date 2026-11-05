@@ -1,6 +1,6 @@
 # Richie: a personal AI trading agent
 
-Richie is an AI trading agent I built as a personal project. He runs on your own computer and trades two small
+Richie is an AI trading agent I am building as a personal project. He runs on your own computer and trades two small
 accounts that you own: a Robinhood Agentic account (stocks, ETFs and crypto) and a Kalshi account (event contracts).
 You talk to him through your own Telegram bot, and a local dashboard shows everything he holds and does.
 
