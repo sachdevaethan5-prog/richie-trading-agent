@@ -198,6 +198,25 @@ of keeping them in `.env`.
 Tunable settings and hard rules live in `src/config.mjs`. The entry gates live in `src/core/lib.mjs` and
 `src/strategy.mjs`. The session schedule lives in `src/live-sessions.mjs`.
 
+## Testing the strategy on long history
+
+`npm run backtest` runs Richie's stock rules on up to 27 years of free daily bars (Yahoo, dividend adjusted, cached in
+`~/.richie/history`). It needs no account or model and takes about four minutes. Each universe gets 96 variants
+(4 entry rules, 6 exit styles, 3 or 5 positions, idle cash held as cash or in SPY), through the same engine and costs
+as the dashboard's Strategy page. Three universes are picked without hindsight: the nine original sector ETFs
+(1999 on) and about the 20 largest US companies at the end of 2004 and of 2014, each tested only after that date.
+The list in `live-sessions.mjs`, picked today, is run beside them to show how much hindsight flatters a backtest.
+It also prints a walk-forward check: the best variant on the first half of the data, scored on the second half. Yahoo's
+adjusted prices shift by about a millionth between downloads, so a fresh download can move a figure by 0.1 point.
+`--refresh` downloads again. Otherwise the cache is reused.
+
+What it showed (November 2026, [full table](docs/history-backtest.md)): the default playbook (momentum entry, 7% stop,
+14% target, 20 days, 3 positions, idle cash in cash) ranked 82nd to 94th of 96 and trailed buying and holding SPY by
+7 to 10 points a year on every universe picked without hindsight. Letting winners run with a trailing stop did best,
+but only about 1 point a year better than SPY on two universes. On the 2014 large caps it was 7 points, all of it
+after 2021. The variants that led in the first half did not hold up in the second. Treat the playbook as an experiment, not an edge. A strategy version that passes the promotion check in
+`config.mjs` is shown to you and goes live only on your approval.
+
 ## How it is built
 
 ```
@@ -214,6 +233,7 @@ src/
   core/               broker clients (Robinhood MCP over OAuth, Kalshi signed REST), gates, memory
   server.mjs, dashboard/, controls.mjs, snapshot.mjs   the local dashboard
   playbook.md         the strategy, in plain English
+  strategy.mjs, history-backtest.mjs   the backtest engine and the long-history test
 tests/                offline tests with fake brokers and captured, anonymized broker responses
 ```
 

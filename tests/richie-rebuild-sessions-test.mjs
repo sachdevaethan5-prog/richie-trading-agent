@@ -172,7 +172,7 @@ test("research stops for the day at the owner's $0.25 and counts what each worke
   assert.deepEqual(after.map(r => [r.status, r.problems[0]]), [["skipped", "today's research budget is spent"]]);
 });
 
-test("automatic promotion needs every criterion the owner chose", () => {
+test("a version reaches the owner for approval only when it meets every promotion criterion", () => {
   const good = { count: 34, netReturn: 0.08, maxDrawdown: 0.12 };
   assert.deepEqual(promotionCheck(good, { benchmark: 0.05, missedRate: 0.01 }), { pass: true, reasons: [] });
   const r = promotionCheck({ count: 12, netReturn: 0.02, maxDrawdown: 0.3 }, { benchmark: 0.05, missedRate: 0.08 });

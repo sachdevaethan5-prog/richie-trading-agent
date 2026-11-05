@@ -274,7 +274,7 @@ export function strategySummary({ series, playbook, missedRate, version = PLAYBO
       "Sessions: stocks 10:30 and 3:00 on weekdays, crypto 9:00 pm Mon, Wed, Fri, Kalshi noon, 5:00 and 10:00 pm daily."],
     decisionsTitle: "Decisions",
     openDecisions: [`Review: ${DECIDED.review === "deepseek" ? "DeepSeek PASS for every buy; exits need none" : DECIDED.review}.`,
-      `Promotion: automatic when a version passes (${DECIDED.promotionCriteria.minTrades} trades, beats buy and hold after costs, drawdown ${DECIDED.promotionCriteria.maxDrawdown * 100}% or less, under ${DECIDED.promotionCriteria.maxMissedChecks * 100}% missed checks).`,
+      `Promotion: the owner approves a version that passes (${DECIDED.promotionCriteria.minTrades} trades, beats buy and hold after costs, drawdown ${DECIDED.promotionCriteria.maxDrawdown * 100}% or less, under ${DECIDED.promotionCriteria.maxMissedChecks * 100}% missed checks).`,
       "Research: up to 3 DeepSeek Flash workers per question set, $0.25 a day; past that, sessions research themselves.",
       "Monitor: every minute for stocks in market hours, every 2 minutes for crypto and Kalshi.",
       "Cash only. No per-trade, position-count, daily-count or drawdown cap."] };

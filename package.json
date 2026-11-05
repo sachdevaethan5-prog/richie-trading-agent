@@ -13,6 +13,7 @@
     "signin": "node --env-file-if-exists=.env src/signin.mjs",
     "watch": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/runner.mjs --once",
     "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/live.mjs --live",
-    "dashboard": "scripts/dashboard.sh"
+    "dashboard": "scripts/dashboard.sh",
+    "backtest": "node --disable-warning=ExperimentalWarning src/history-backtest.mjs"
   }
 }

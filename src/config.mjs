@@ -21,7 +21,7 @@ export const SETTINGS = {
 
 export const DECIDED = {
   review: "deepseek",                // a buy needs DeepSeek's PASS (exits need none)
-  promotion: "automatic",            // a version that passes goes live, and the owner is told afterwards
+  promotion: "approval",             // a version that passes is shown to the owner; it goes live only on their yes
   promotionCriteria: { minTrades: 30, beatBenchmarkAfterCosts: true, maxDrawdown: 0.25, maxMissedChecks: 0.05 },
   legacyGates: "keep",               // stay live until the evaluation on real history shows a change; each change goes to the owner
   dashboardAccess: "local",        // 127.0.0.1 by default; optional remote access behind Cloudflare Access (server.mjs)

@@ -1,6 +1,6 @@
 // Strategy versions and offline evaluation. A strategy is a versioned rule set evaluated
-// on historical or paper data with costs. A version that meets DECIDED.promotionCriteria is promoted automatically
-// and the owner is told afterwards; promotionCheck() is the whole test.
+// on historical or paper data with costs. A version that meets DECIDED.promotionCriteria is put to the owner, and it
+// goes live only on their yes. promotionCheck() is the minimum bar, not proof: 30 trades cannot tell a modest edge from luck.
 import { DECIDED } from "./config.mjs";
 
 // The legacy case gates from src/core/lib.mjs. The owner kept them live (2026-11-02; sessions.mjs gateProblem applies
@@ -63,7 +63,7 @@ export function brier(cases) {
 export function evaluationReport({ version, live, paper, benchmark }) {
   const line = (label, r) => r ? `${label}: ${r.count} trades, net ${(r.netReturn * 100).toFixed(2)}%, max drawdown ${(r.maxDrawdown * 100).toFixed(2)}%, exposure ${(r.exposure * 100).toFixed(0)}% of bars${r.sampleNote ? `. ${r.sampleNote}` : ""}` : `${label}: no data`;
   return [`Strategy ${version}`, line("Live", live), line("Paper", paper), `Benchmark (buy and hold): ${(benchmark * 100).toFixed(2)}%`,
-    "Promotion: automatic when the paper result passes the promotion criteria; the owner is told afterwards."].join("\n");
+    "Promotion: the owner's approval, once the paper result passes the promotion criteria."].join("\n");
 }
 
 // result: evaluate() output; benchmark: buy-and-hold over the same bars; missedRate: share of monitor checks missed
@@ -79,25 +79,28 @@ export function promotionCheck(result, { benchmark, missedRate }, c = DECIDED.pr
 
 // A whole-portfolio test (the per-symbol evaluate() above says nothing about idle cash). series: { SYMBOL: bars } on
 // shared dates, with the core symbol among them. Each day: open satellites exit on their stop or target (intraday,
-// a gap fills at the open), a close under the 20-day, or maxBars; then satellites signalled today are bought at the
+// a gap fills at the open), a trailing stop (trail: fraction under the highest close since entry), a close under the
+// exitSma-day average (0 turns it off), or maxBars; target and maxBars may be Infinity to let a winner run. Then
+// satellites signalled today are bought at the
 // next open, each 1/slots of equity, funded from the core; leftover cash goes to the core at that open. signal(bars, i)
 // sees only bars up to i. costs are charged on every buy and sell.
-export function evaluatePortfolio(series, { signal, slots = 3, core = "SPY", useCore = true, stop = 0.07, target = 0.14, maxBars = 20, costs = {} } = {}) {
+export function evaluatePortfolio(series, { signal, slots = 3, core = "SPY", useCore = true, stop = 0.07, target = 0.14, maxBars = 20, trail = null, exitSma = 20, costs = {} } = {}) {
   const cost = (costs.slippage || 0) + (costs.spread || 0) / 2, days = series[core].map(b => b.t);
   const idx = Object.fromEntries(Object.entries(series).map(([s, b]) => [s, new Map(b.map((x, i) => [x.t, i]))]));
   const px = (s, d, k = "c") => { const i = idx[s].get(d); return i == null ? null : series[s][i][k]; };
-  const sma20 = (b, i) => { if (i < 19) return NaN; let t = 0; for (let j = i - 19; j <= i; j++) t += b[j].c; return t / 20; };
-  let cash = 1, coreUnits = 0, peak = 1, maxDrawdown = 0; const pos = new Map(), trades = [];
+  const sma = (b, i, n) => { if (i < n - 1) return NaN; let t = 0; for (let j = i - n + 1; j <= i; j++) t += b[j].c; return t / n; };
+  let cash = 1, coreUnits = 0, peak = 1, maxDrawdown = 0; const pos = new Map(), trades = [], curve = [];
   const equity = d => cash + coreUnits * (px(core, d) ?? 0) + [...pos].reduce((t, [s, p]) => t + p.units * (px(s, d) ?? p.entry), 0);
   for (let k = 50; k < days.length - 1; k++) {
     const d = days[k], next = days[k + 1];
     for (const [s, p] of [...pos]) {
       const i = idx[s].get(d); if (i == null) continue;
-      const b = series[s][i]; let exit = null;
-      if (b.l <= p.entry * (1 - stop)) exit = Math.min(p.entry * (1 - stop), b.o);
+      const b = series[s][i], floor = Math.max(p.entry * (1 - stop), trail ? p.high * (1 - trail) : 0); let exit = null;
+      if (b.l <= floor) exit = Math.min(floor, b.o);
       else if (b.h >= p.entry * (1 + target)) exit = Math.max(p.entry * (1 + target), b.o);
-      else if (k - p.k >= maxBars || b.c < sma20(series[s], i)) exit = b.c;
-      if (exit != null) { cash += p.units * exit * (1 - cost); trades.push({ symbol: s, ret: exit * (1 - cost) / p.entry - 1 }); pos.delete(s); }
+      else if (k - p.k >= maxBars || (exitSma && b.c < sma(series[s], i, exitSma))) exit = b.c;
+      if (exit != null) { cash += p.units * exit * (1 - cost); trades.push({ symbol: s, ret: exit * (1 - cost) / p.entry - 1, from: p.day, to: d }); pos.delete(s); }
+      else p.high = Math.max(p.high, b.c);
     }
     const eq = equity(d);
     for (const s of Object.keys(series)) {
@@ -107,13 +110,13 @@ export function evaluatePortfolio(series, { signal, slots = 3, core = "SPY", use
       const stake = eq / slots;
       if (cash < stake && coreUnits > 0) { const sell = px(core, next, "o") * (1 - cost), u = Math.min(coreUnits, (stake - cash) / sell); coreUnits -= u; cash += u * sell; }
       const spend = Math.min(stake, cash); if (spend <= 1e-9) break;
-      const entry = open * (1 + cost); pos.set(s, { units: spend / entry, entry, k: k + 1 }); cash -= spend;
+      const entry = open * (1 + cost); pos.set(s, { units: spend / entry, entry, high: open, k: k + 1, day: next }); cash -= spend;
     }
     if (useCore && cash > 1e-9 && px(core, next, "o")) { coreUnits += cash * (1 - cost) / px(core, next, "o"); cash = 0; }
-    const e = equity(next); peak = Math.max(peak, e); maxDrawdown = Math.max(maxDrawdown, 1 - e / peak);
+    const e = equity(next); curve.push({ t: next, e }); peak = Math.max(peak, e); maxDrawdown = Math.max(maxDrawdown, 1 - e / peak);
   }
   const wins = trades.filter(t => t.ret > 0).length;
-  return { netReturn: equity(days.at(-1)) - 1, maxDrawdown, count: trades.length, winRate: trades.length ? wins / trades.length : null, trades,
+  return { netReturn: equity(days.at(-1)) - 1, maxDrawdown, count: trades.length, winRate: trades.length ? wins / trades.length : null, trades, curve,
     benchmark: series[core].at(-1).c / series[core][50].o - 1,
     sampleNote: trades.length < 30 ? `Only ${trades.length} trades: too few to tell skill from luck.` : null };
 }
