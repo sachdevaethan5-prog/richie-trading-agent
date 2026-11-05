@@ -1,0 +1,18 @@
+{
+  "name": "richie-trading-agent",
+  "version": "1.0.0",
+  "description": "A personal AI trading agent for Robinhood (stocks, ETFs, crypto) and Kalshi (event contracts), with a Telegram chat and a local dashboard.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "test": "node --disable-warning=ExperimentalWarning --test \"tests/*-test.mjs\"",
+    "demo": "node --disable-warning=ExperimentalWarning src/server.mjs",
+    "check": "node --env-file-if-exists=.env src/setup.mjs check",
+    "signin": "node --env-file-if-exists=.env src/signin.mjs",
+    "watch": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/runner.mjs --once",
+    "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/live.mjs --live",
+    "dashboard": "scripts/dashboard.sh"
+  }
+}

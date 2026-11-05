@@ -1,0 +1,31 @@
+{
+ "captured": "2026-11-03 from api.elections.kalshi.com/trade-api/v2/markets (public, read-only)",
+ "markets": [
+  {
+   "ticker": "KXNFLSPREAD-26NOV05JACBAL-JAC3",
+   "event_ticker": "KXNFLSPREAD-26NOV05JACBAL",
+   "title": "Jacksonville wins by over 2.5 points?",
+   "yes_sub_title": "Jacksonville wins by over 2.5 points",
+   "status": "active",
+   "yes_bid_dollars": "0.7900",
+   "yes_ask_dollars": "0.8000",
+   "no_bid_dollars": "0.2000",
+   "no_ask_dollars": "0.2100",
+   "close_time": "2026-11-08T01:15:00Z",
+   "volume_fp": "5225.11"
+  },
+  {
+   "ticker": "KXNFLTOTAL-26NOV05JACBAL-50",
+   "event_ticker": "KXNFLTOTAL-26NOV05JACBAL",
+   "title": "Full Game: over 49.5 points scored?",
+   "yes_sub_title": "Over 49.5 points",
+   "status": "active",
+   "yes_bid_dollars": "0.2300",
+   "yes_ask_dollars": "0.2400",
+   "no_bid_dollars": "0.7600",
+   "no_ask_dollars": "0.7700",
+   "close_time": "2026-11-08T01:15:00Z",
+   "volume_fp": "7638.15"
+  }
+ ]
+}

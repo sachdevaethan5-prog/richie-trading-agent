@@ -1,0 +1,144 @@
+{
+ "captured": "2026-11-02T23:58Z, get_equity_orders, look-only; guide text dropped; all ids replaced with random ones",
+ "data": {
+  "orders": [
+   {
+    "id": "cf350ab3-858f-424f-b23d-1e63c0c32802",
+    "ref_id": "87e4883c-38b9-4bce-a2a3-4fc1a6dd6977",
+    "instrument_id": "a37b314c-d1e5-4ddf-9e6a-b7b525c7509c",
+    "symbol": "DVN",
+    "side": "sell",
+    "type": "market",
+    "state": "filled",
+    "quantity": "0.039494",
+    "cumulative_quantity": "0.039494",
+    "price": null,
+    "stop_price": null,
+    "average_price": "48.761300",
+    "fees": "0.000000",
+    "dollar_based_amount": null,
+    "time_in_force": "gfd",
+    "market_hours": "regular_hours",
+    "trigger": "immediate",
+    "placed_agent": "agentic",
+    "agent_initiated": true,
+    "created_at": "2026-11-02T20:50:13.847022Z",
+    "last_transaction_at": "2026-11-02T20:50:13.979Z",
+    "executions": [
+     {
+      "id": "085a1504-32df-43bb-9619-b9afda7ebe76",
+      "price": "48.761300",
+      "quantity": "0.039494",
+      "timestamp": "2026-11-02T20:50:13.979Z",
+      "fees": "0.000000"
+     }
+    ]
+   },
+   {
+    "id": "28b5e473-8d29-41f6-9fc1-d4ed79d5052a",
+    "ref_id": "f7d742f0-cf63-4be6-83bc-b4364f4e6e8f",
+    "instrument_id": "a37b314c-d1e5-4ddf-9e6a-b7b525c7509c",
+    "symbol": "DVN",
+    "side": "buy",
+    "type": "market",
+    "state": "filled",
+    "quantity": "0.039494",
+    "cumulative_quantity": "0.039494",
+    "price": "50.630000",
+    "stop_price": null,
+    "average_price": "50.639900",
+    "fees": "0.000000",
+    "dollar_based_amount": {
+     "amount": "2.000000",
+     "currency_code": "USD"
+    },
+    "time_in_force": "gfd",
+    "market_hours": "regular_hours",
+    "trigger": "immediate",
+    "placed_agent": "agentic",
+    "agent_initiated": true,
+    "created_at": "2026-10-16T19:02:07.033464Z",
+    "last_transaction_at": "2026-10-16T19:02:07.256Z",
+    "executions": [
+     {
+      "id": "1f8196ce-f39b-4cf7-9b7e-5c6cd977f494",
+      "price": "50.639900",
+      "quantity": "0.039494",
+      "timestamp": "2026-10-16T19:02:07.256Z",
+      "fees": "0.000000"
+     }
+    ]
+   },
+   {
+    "id": "db0ff4a4-9a33-4b73-9be3-c665cb925112",
+    "ref_id": "ef6a59b2-58c5-46eb-9c5d-a585fa064fbe",
+    "instrument_id": "7376d647-4e40-4bcd-a8bd-1bcca0616029",
+    "symbol": "XLE",
+    "side": "buy",
+    "type": "market",
+    "state": "filled",
+    "quantity": "0.059483",
+    "cumulative_quantity": "0.059483",
+    "price": "67.250000",
+    "stop_price": null,
+    "average_price": "67.245900",
+    "fees": "0.000000",
+    "dollar_based_amount": {
+     "amount": "4.000000",
+     "currency_code": "USD"
+    },
+    "time_in_force": "gfd",
+    "market_hours": "regular_hours",
+    "trigger": "immediate",
+    "placed_agent": "agentic",
+    "agent_initiated": true,
+    "created_at": "2026-10-16T14:32:24.182599Z",
+    "last_transaction_at": "2026-10-16T14:32:24.392Z",
+    "executions": [
+     {
+      "id": "efc596cd-b652-46b7-9ab6-af9b64e915c3",
+      "price": "67.245900",
+      "quantity": "0.059483",
+      "timestamp": "2026-10-16T14:32:24.392Z",
+      "fees": "0.000000"
+     }
+    ]
+   },
+   {
+    "id": "2cba336e-88f2-444f-91bc-7061d300fe8a",
+    "ref_id": "d3877317-4cac-413c-92b4-73aefcb16069",
+    "instrument_id": "7c3e4324-11ff-4765-99df-0e9b23f9d30c",
+    "symbol": "ABBV",
+    "side": "buy",
+    "type": "market",
+    "state": "filled",
+    "quantity": "0.014091",
+    "cumulative_quantity": "0.014091",
+    "price": "283.770000",
+    "stop_price": null,
+    "average_price": "283.861500",
+    "fees": "0.000000",
+    "dollar_based_amount": {
+     "amount": "4.000000",
+     "currency_code": "USD"
+    },
+    "time_in_force": "gfd",
+    "market_hours": "regular_hours",
+    "trigger": "immediate",
+    "placed_agent": "agentic",
+    "agent_initiated": true,
+    "created_at": "2026-10-14T16:19:30.142389Z",
+    "last_transaction_at": "2026-10-14T16:19:30.38Z",
+    "executions": [
+     {
+      "id": "ecd5967e-6995-4568-872c-40b0f88bcd72",
+      "price": "283.861500",
+      "quantity": "0.014091",
+      "timestamp": "2026-10-14T16:19:30.38Z",
+      "fees": "0.000000"
+     }
+    ]
+   }
+  ]
+ }
+}

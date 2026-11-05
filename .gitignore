@@ -1,0 +1,19 @@
+# Secrets and personal data never belong in this repo.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+.richie/
+*.db
+*.db-shm
+*.db-wal
+*.log
+journal.md
+lessons.md
+# Skills you write for yourself stay local unless you choose to share them.
+src/skills/*/
+!src/skills/kalshi-parlays/
+node_modules/
+.DS_Store

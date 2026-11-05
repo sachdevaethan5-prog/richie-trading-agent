@@ -1,0 +1,19 @@
+;; macOS sandbox for the Richie dashboard server (scripts/dashboard.sh). It may read only its own code, Node and the
+;; data folder. It writes nothing but SQLite's shared-memory files beside the ledger (a read-only WAL reader needs
+;; them) and the controls inbox folder (CONTROLS.md), opens no Keychain and makes no outbound connection: it only
+;; answers on 127.0.0.1. Parameters: HOME, CODE (the repo), DATA (the data folder), NODE (node's install folder).
+(version 1)
+(allow default)
+(deny file-read* file-write* (subpath (param "HOME")))
+(deny file-write* (subpath "/"))
+(allow file-write* (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/tty"))
+(allow file-read-metadata)
+(allow file-read* (subpath (string-append (param "CODE") "/src"))
+                  (literal (string-append (param "CODE") "/package.json"))
+                  (subpath (param "NODE"))
+                  (subpath (param "DATA")))
+(allow file-write* (regex (string-append "^" (regex-quote (param "DATA")) "/ledger\\.db-(shm|wal)$")))
+(allow file-write* (subpath (string-append (param "DATA") "/controls")))
+(deny mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.securityd"))
+(deny network-outbound (remote ip))
+(allow network-outbound (remote ip "localhost:*"))

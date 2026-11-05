@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- Source for docs/images/thumbnail.png (1280x640, the GitHub social preview size). Render with headless Chrome:
+     chrome --headless=new --hide-scrollbars --force-device-scale-factor=2 --window-size=1280,640 --screenshot=docs/images/thumbnail.png docs/thumbnail.html
+     Every figure is sample data, as in the demo dashboard. -->
+<html><head><meta charset="utf-8"><style>
+:root{--bg:#f2f0e8;--paper:#f8f7f1;--paper2:#eeece3;--ink:#20231f;--muted:#767970;--rule:#d6d4ca;--green:#187653;--red:#b84035;--gold:#a67622;
+--mono:"SFMono-Regular",Menlo,Consolas,monospace;--serif:Georgia,"Times New Roman",serif;--sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}html,body{margin:0;width:1280px;height:640px;overflow:hidden;background:var(--paper);color:var(--ink);font-family:var(--sans)}
+.wrap{position:absolute;inset:0;padding:0 56px}
+.mast{display:flex;justify-content:space-between;align-items:center;padding:26px 0 16px;border-bottom:1.5px solid var(--ink)}
+.mast b{font:700 15px var(--mono);letter-spacing:2px}
+.badges{display:flex;gap:10px}
+.badge{border:1px solid #c6ae77;color:#86621f;background:#f4edda;padding:6px 10px;font:700 11px var(--mono);letter-spacing:.8px}
+.badge.obs{border-color:#9fb8ab;color:#2f5b47;background:#e6efe9}
+.tape{display:flex;border-bottom:1px solid var(--rule);background:var(--paper2)}
+.tape div{flex:1;display:flex;justify-content:space-between;padding:10px 14px;font:12px var(--mono);border-right:1px solid var(--rule)}
+.tape div:last-child{border-right:0}.tape i{font-style:normal;font-weight:700}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.g{background:var(--green)}.o{background:var(--gold)}.r{background:var(--red)}
+.main{display:flex;gap:48px;padding-top:40px}
+.left{flex:1.05}
+.kick{font:700 13px var(--mono);letter-spacing:2.4px;color:var(--muted)}
+h1{font:400 112px/1 var(--serif);margin:12px 0 18px;letter-spacing:-2px}
+.sub{font-size:22px;line-height:1.4;color:#3c403a;max-width:540px;margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:30px}
+.chip{border:1.5px solid var(--ink);padding:8px 12px;font:700 12px var(--mono);letter-spacing:.8px}
+.right{flex:.95;border-top:1.5px solid var(--ink)}
+.lbl{font:700 12px var(--mono);letter-spacing:1.6px;color:var(--muted)}
+.val{display:flex;justify-content:space-between;align-items:flex-end;padding:18px 0 14px;border-bottom:1px solid var(--rule)}
+.big{font:400 74px/1 var(--serif);letter-spacing:-1px;margin-top:8px}
+.up{font:700 15px var(--mono);color:var(--green)}
+table{width:100%;border-collapse:collapse;margin-top:6px}
+th{text-align:left;font:700 11px var(--mono);letter-spacing:1.2px;color:var(--muted);padding:10px 0 8px;border-bottom:1.5px solid var(--ink)}
+td{padding:11px 0;border-bottom:1px solid var(--rule);font:14px var(--mono)}
+td:first-child{font:700 16px var(--sans)}
+td small{display:block;font:11px var(--mono);color:var(--muted);font-weight:400;margin-top:2px}
+.pos{color:var(--green)}.neg{color:var(--red)}
+.st{font:700 11px var(--mono);letter-spacing:.6px;color:#2f5b47}.st.warn{color:#86621f}
+.foot{position:absolute;left:56px;right:56px;bottom:22px;display:flex;justify-content:space-between;font:12px var(--mono);color:var(--muted);border-top:1px solid var(--rule);padding-top:12px}
+</style></head><body><div class="wrap">
+<div class="mast"><b>RICHIE / PRIVATE TRADING DESK</b><div class="badges"><span class="badge obs">CASH ONLY · EVERY BUY REVIEWED</span><span class="badge">SAMPLE DATA</span></div></div>
+<div class="tape">
+ <div><i>ABBV</i><span>$289.34</span><span><span class="dot g"></span>LIVE</span></div>
+ <div><i>XLE</i><span>$63.82</span><span><span class="dot g"></span>LIVE</span></div>
+ <div><i>ETH</i><span>$2,412</span><span><span class="dot g"></span>LIVE</span></div>
+ <div><i>KXRAIN</i><span>63¢</span><span><span class="dot o"></span>SETTLES FRI</span></div>
+</div>
+<div class="main">
+ <div class="left">
+  <div class="kick">PERSONAL AI TRADING AGENT</div>
+  <h1>Richie</h1>
+  <p class="sub">Researches the market, writes a case for every trade, and guards each position with plain-code stops. Talks to you on Telegram.</p>
+  <div class="chips"><span class="chip">ROBINHOOD</span><span class="chip">KALSHI</span><span class="chip">TELEGRAM</span><span class="chip">NODE.JS</span><span class="chip">MIT</span></div>
+ </div>
+ <div class="right">
+  <div class="val"><div><div class="lbl">COMBINED ACCOUNT VALUE</div><div class="big">$20.31</div></div>
+   <svg width="170" height="64" viewBox="0 0 170 64"><polyline fill="none" stroke="#187653" stroke-width="2.5" points="0,50 18,46 34,52 52,40 70,42 88,30 106,34 124,22 142,24 164,12"/><circle cx="164" cy="12" r="3.5" fill="#187653"/></svg></div>
+  <table><tr><th>POSITION</th><th>VALUE</th><th>P&amp;L</th><th>PROTECTION</th></tr>
+   <tr><td>ABBV<small>Stock · Robinhood</small></td><td>$4.08</td><td class="pos">+$0.08</td><td class="st"><span class="dot g"></span>STOP WATCHED</td></tr>
+   <tr><td>XLE<small>ETF · Robinhood</small></td><td>$2.55</td><td class="pos">+$0.03</td><td class="st"><span class="dot g"></span>STOP WATCHED</td></tr>
+   <tr><td>NYC rain · YES<small>Event contract · Kalshi</small></td><td>$1.26</td><td class="neg">−$0.02</td><td class="st warn"><span class="dot o"></span>TO SETTLEMENT</td></tr>
+  </table>
+ </div>
+</div>
+<div class="foot"><span>Overview · Positions · Accounts · Activity · Research · Strategy</span><span>github.com/sachdevaethan5-prog/richie-trading-agent</span></div>
+</div></body></html>
