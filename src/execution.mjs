@@ -9,6 +9,8 @@ import { positionId } from "./ledger.mjs";
 import { errorClass } from "./health.mjs";
 
 export const EXECUTION_LEASE = "execution";
+// Down to the cent, past a float slip (8 - 5.9 is 2.0999...).
+export const cents = x => Math.floor(x * 100 + 1e-6) / 100;
 
 export async function submitOrder({ ledger, adapter, order, mode = EXECUTION_MODE, owner, paused = async () => false, now = Date.now, newId = randomUUID }) {
   // Fails closed: anything other than the exact string "live" is observation.

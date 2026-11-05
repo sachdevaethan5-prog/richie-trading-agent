@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { LEDGER_FILE, LOG_FILE, secret } from "./env.mjs";
 import { openLedger } from "./ledger.mjs";
 import { scheduler } from "./monitor.mjs";
+import { DECIDED } from "./config.mjs";
 import { EXECUTION_LEASE } from "./execution.mjs";
 import { protectionState } from "./monitor.mjs";
 import { errorClass, backoff } from "./health.mjs";
@@ -69,7 +70,9 @@ export async function command(text, { ledger, chat, journal = null, start = null
   if (/^\/?(status|how are (you|we) doing\??)$/.test(t)) return statusText(ledger);
   if (/^\/?pause$/.test(t)) { ledger.meta("paused", "1"); return "Paused new buys. Exits and stop checks keep running. Send resume to undo."; }
   if (/^\/?resume$/.test(t)) { ledger.meta("paused", "0"); return "Resumed. New buys allowed again under the usual checks."; }
-  if (/^\/?(help|start|commands)$/.test(t)) return "I'm Richie. Commands: menu (live panels), status, journal, kalshi journal, run (a stock session now), kalshi (a Kalshi session now), pause, resume. Anything else, just ask.";
+  if (/^\/?core off$/.test(t)) { ledger.meta("core", "off"); return "Core buying is off: cash no longer goes to SPY. The SPY held stays. Send core on to undo."; }
+  if (/^\/?core on$/.test(t)) { ledger.meta("core", "on"); return `Core buying is on: in market hours, cash goes to SPY up to ${Math.round(DECIDED.stocks.coreShare * 100)}% of the Robinhood account.`; }
+  if (/^\/?(help|start|commands)$/.test(t)) return "I'm Richie. Commands: menu (live panels), status, journal, kalshi journal, run (a stock session now), kalshi (a Kalshi session now), pause, resume, core off, core on. Anything else, just ask.";
   return chat(text);
 }
 

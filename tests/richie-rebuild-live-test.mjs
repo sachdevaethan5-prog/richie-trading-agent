@@ -117,7 +117,7 @@ test("look tools: Robinhood reads only, account numbers filled by code, page tex
   assert.match(await tools.web_read.run({ url: "http://example.com" }), /only https/);
 });
 
-test("strategy summary: the playbook scored as a whole portfolio beside SPY and the SPY-core version, sections, decisions", async () => {
+test("strategy summary: 80% SPY plus the trailing-stop satellites, scored beside SPY and the old rules, sections, decisions", async () => {
   const { strategySummary, momentumSignal, researchItem } = await import("../src/live-sessions.mjs");
   const day = i => Date.parse("2025-09-01") + i * 86400000;
   // AAA climbs with a volume spike every 30 days, so the rule fires and the target is reached; SPY drifts up.
@@ -125,12 +125,18 @@ test("strategy summary: the playbook scored as a whole portfolio beside SPY and 
   const SPY = Array.from({ length: 300 }, (_, i) => { const c = 400 * 1.0005 ** i; return { t: day(i), o: c, h: c * 1.002, l: c * 0.998, c, v: 1 }; });
   assert.equal(momentumSignal(AAA.slice(0, 40), 39), null, "needs 50 bars of history");
   const s = strategySummary({ series: { AAA, SPY }, playbook: "# Playbook\n## Core\n- Idle cash in SPY.\n## Satellite\n- Momentum with stops.", missedRate: 0.01 });
-  assert.equal(s.version, "cash-satellite-1"); assert.equal(s.sample, false);
+  assert.equal(s.version, "core-trail-1"); assert.equal(s.sample, false);
   assert.deepEqual(s.sections, [{ title: "Core", items: ["Idle cash in SPY."] }, { title: "Satellite", items: ["Momentum with stops."] }]);
-  assert.ok(s.evaluation.count > 0);
+  assert.equal(s.evaluation.count, 0, "a steady riser never falls 20% from its high, so the trailing stop never sells it");
   assert.ok(s.evaluation.netReturn > s.evaluation.benchmark, "the satellite beats a slow SPY here");
-  assert.match(s.evaluation.report, /^cash-satellite-1: up to 3 momentum satellites with idle cash in cash, 1 names/);
-  assert.match(s.evaluation.report, /With an SPY core \(not used, the owner keeps cash\):/);
+  const pc = Math.round((await import("../src/config.mjs")).DECIDED.stocks.coreShare * 100);
+  assert.match(s.evaluation.report, new RegExp(`^core-trail-1: ${pc}% SPY held, ${100 - pc}% in up to 2 momentum satellites with a 20% trailing stop, 1 names`));
+  assert.match(s.evaluation.report, /Old rules \(3 satellites, 7% stop, 14% target, cash; paper only\):/);
+  // The blend is exactly 80% SPY's return (bought at the first scored open, with costs) and 20% the satellite money's.
+  const { coreTrail } = await import("../src/live-sessions.mjs");
+  const costs = { slippage: 0.0005, spread: 0.001 }, r = coreTrail({ AAA, SPY }, { costs, s: { core: "SPY", coreShare: 0.8, trail: 0.2, minOrder: 1 } });
+  assert.ok(Math.abs(r.netReturn - (0.8 * (SPY.at(-1).c / (SPY[50].o * 1.001) - 1) + 0.2 * r.sleeve)) < 1e-12);
+  assert.ok(r.maxDrawdown >= 0 && r.maxDrawdown < 1);
   assert.match(s.evaluation.report, /Promotion check: does not pass \(.*trades, needs 30/);
   assert.equal(s.gatesTitle, "Entry Gates (Kept Live)");
   assert.match(s.openDecisions[0], /DeepSeek PASS for every buy/);
@@ -230,6 +236,61 @@ test("close rules: under the 20-day near the close sells; the time limit spares 
   assert.deepEqual(sent.map(x => [x.instrument, x.why]), [["ABBV", "close under the 20-day average"]]);
   assert.equal(rh.placed.length, 1); assert.equal(rh.placed[0].type, "market");
   assert.deepEqual(await closeRules({ ledger: L, exec, now: () => now + 60000, open: () => true }), [], "once a day");
+});
+
+// Playbook core-trail-1: a trailing stop rises with the close and never falls; positions on it
+// skip the old average and time exits.
+test("trailing stop: raised near the close from the price then, never lowered, and exempt from the old close rules", async () => {
+  const { trailPlan, closeRuleExit, closeRules } = await import("../src/runner.mjs");
+  const plan = { role: "satellite", entry: 100, high: 100, trail: 0.2, stop: 80, target: null };
+  assert.deepEqual(trailPlan(plan, 110), { ...plan, high: 110, stop: 88 });
+  assert.equal(trailPlan({ ...plan, high: 110, stop: 88 }, 105), null, "a lower close moves nothing");
+  assert.equal(trailPlan({ stop: 90, target: 120 }, 130), null, "a plan without a trail is left alone");
+  const day = i => Date.parse("2026-10-01T20:00:00Z") + i * 86400000, now = Date.parse("2026-11-03T20:52:00Z");
+  const bars = Array.from({ length: 30 }, (_, i) => ({ t: day(i), o: 100, h: 101, l: 99, c: 100 }));
+  const pos = { broker: "robinhood", instrument_type: "stock", opened_at: day(0), plan: JSON.stringify(plan) };
+  assert.equal(closeRuleExit(pos, 98, bars, now), null, "no average exit");
+  assert.equal(closeRuleExit(pos, 102, bars, now), null, "no time limit");
+  // Live: the ABBV holding on a trail, a close above its high: the stop rises in the ledger, nothing is sold.
+  const { L, rh } = setup({ rh: fakeRh({ abbv: 300 }) });
+  L.run("UPDATE positions SET plan = ? WHERE id = 'robinhood:ABBV:long'", JSON.stringify({ ...plan, entry: 283.9, high: 283.9, stop: 227.12 }));
+  L.meta("candles:robinhood:ABBV:long", JSON.stringify({ bars: Array.from({ length: 25 }, (_, i) => ({ t: day(i), o: 320, h: 321, l: 319, c: 320 })) }));
+  L.setQuote({ broker: "robinhood", instrument: "ABBV", price: 300, source: "t", asOf: now });
+  L.lease(EXECUTION_LEASE, "live-test", 120000, now);
+  const exec = { mode: "live", owner: "live-test", adapters: { robinhood: robinhoodAdapter(tradingRobinhood(rh, toolKind), { account_number: "ACCT" }) }, paused: async () => false };
+  assert.deepEqual(await closeRules({ ledger: L, exec, now: () => now, open: () => true }), []);
+  assert.equal(rh.placed.length, 0);
+  assert.deepEqual(JSON.parse(L.position("robinhood:ABBV:long").plan), { ...plan, entry: 283.9, high: 300, stop: 240 });
+});
+
+// The SPY core: cash to SPY up to coreShare of the Robinhood account (80% here), at least $1, never sold by code.
+test("core: cash goes to SPY up to 80% of the account, from $1, live, in hours, one order at a time", async () => {
+  const { coreBuyAmount, coreKeeper: keeper } = await import("../src/runner.mjs");
+  const s = { core: "SPY", coreShare: 0.8, trail: 0.2, minOrder: 1 }, amount = o => coreBuyAmount({ ...o, s }), coreKeeper = o => keeper({ ...o, s });
+  assert.equal(amount({ account: { cash: 2.61, value: 10.09 }, coreValue: 0 }), 2.61, "satellites over 20%: all the cash");
+  assert.equal(amount({ account: { cash: 4, value: 10 }, coreValue: 5.9 }), 2.1, "up to the 80% mark; the rest stays for satellites");
+  assert.equal(amount({ account: { cash: 0.9, value: 10 }, coreValue: 0 }), 0, "under Robinhood's $1 minimum");
+  assert.equal(amount({ account: { cash: 2, value: 10 }, coreValue: 8 }), 0, "already at 80%");
+  assert.equal(amount({ account: { cash: 2, value: NaN }, coreValue: 0 }), 0, "no value, no buy");
+  const at = iso => () => Date.parse(iso), L = openLedger(), rh = fakeRh();
+  L.setAccount({ broker: "robinhood", cash: 5, value: 10, source: "test", asOf: Date.parse("2026-11-03T15:00:00Z") });
+  L.lease(EXECUTION_LEASE, "live-test", 3600000, Date.parse("2026-11-03T15:00:00Z"));
+  const exec = { mode: "live", owner: "live-test", adapters: { robinhood: robinhoodAdapter(tradingRobinhood(rh, toolKind), { account_number: "ACCT" }) }, paused: async () => false };
+  assert.equal(await coreKeeper({ ledger: L, exec, now: at("2026-11-03T14:45:00Z"), open: () => true }), null, "not before 10:00 Eastern");
+  assert.equal(await coreKeeper({ ledger: L, exec: null, now: at("2026-11-03T15:00:00Z"), open: () => true }), null, "never in observation");
+  assert.equal(await coreKeeper({ ledger: L, exec, now: at("2026-11-03T15:00:00Z"), open: () => false }), null, "never with the market shut");
+  assert.equal(await coreKeeper({ ledger: L, exec: { ...exec, paused: async () => true }, now: at("2026-11-03T15:00:00Z"), open: () => true }).then(r => r.state), "blocked", "paused: no buy");
+  // "core off" (or the owner selling the core from the dashboard) stops the buying until "core on".
+  assert.match(await command("core off", { ledger: L, chat: async () => "x" }), /^Core buying is off/);
+  assert.equal(await coreKeeper({ ledger: L, exec, now: at("2026-11-03T15:00:00Z"), open: () => true }), null, "core off");
+  assert.match(await command("Core on", { ledger: L, chat: async () => "x" }), /^Core buying is on/);
+  assert.equal(rh.placed.length, 0);
+  const r = await coreKeeper({ ledger: L, exec, now: at("2026-11-03T15:01:00Z"), open: () => true });
+  assert.deepEqual(r, { amount: 5, state: "submitted" });
+  assert.deepEqual({ ...rh.placed[0], ref_id: "x" }, { account_number: "ACCT", symbol: "SPY", side: "buy", ref_id: "x", dollar_amount: "5", type: "market", time_in_force: "gfd", market_hours: "regular_hours" });
+  assert.equal(JSON.parse(L.openOrders()[0].plan).role, "core");
+  assert.equal(await coreKeeper({ ledger: L, exec, now: at("2026-11-03T15:16:00Z"), open: () => true }), null, "the first buy is unresolved: no second");
+  assert.equal(rh.placed.length, 1);
 });
 
 // A quote left from a failed read (here 2 hours old) must not decide the close rule.
@@ -344,4 +405,20 @@ test("a closed real trade produces a lesson that the next session reads", async 
   assert.equal(text.trim().split("\n").length, 1, "one lesson, paper trades excluded");
   assert.match(text, /^- 2026-11-03 DVN \(close under the 20-day average, -3\.6%\): Energy names that slip/);
   assert.match(L.events().find(e => e.kind === "lesson").text, /^Lesson from DVN:/);
+});
+
+// The owner picks Richie's share of the Robinhood account (RICHIE_TRADING_PERCENT); code holds the rest in SPY.
+test("trading share: RICHIE_TRADING_PERCENT sets the core, 20 by default, and a bad value is refused", async () => {
+  const { tradingPercent } = await import("../src/config.mjs");
+  assert.equal(tradingPercent(undefined), 20); assert.equal(tradingPercent(""), 20);
+  assert.equal(tradingPercent("65"), 65); assert.equal(tradingPercent(" 65% "), 65); assert.equal(tradingPercent("0"), 0); assert.equal(tradingPercent("100"), 100);
+  for (const bad of ["101", "-5", "12.5", "lots"]) assert.throws(() => tradingPercent(bad), /whole number from 0 to 100/);
+  const { execFileSync } = await import("node:child_process");
+  const share = env => execFileSync(process.execPath, ["--input-type=module", "-e", 'const { DECIDED } = await import("./src/config.mjs"); console.log(DECIDED.stocks.coreShare)'],
+    { cwd: new URL("..", import.meta.url), env: { ...process.env, ...env } }).toString().trim();
+  assert.equal(share({ RICHIE_TRADING_PERCENT: "65" }), "0.35");
+  assert.equal(share({ RICHIE_TRADING_PERCENT: "" }), "0.8");
+  const { coreBuyAmount } = await import("../src/runner.mjs");
+  assert.equal(coreBuyAmount({ account: { cash: 6, value: 10 }, coreValue: 0, s: { core: "SPY", coreShare: 0.35, trail: 0.2, minOrder: 1 } }), 3.5, "65% to Richie: SPY only up to 35%");
+  assert.equal(coreBuyAmount({ account: { cash: 6, value: 10 }, coreValue: 0, s: { core: "SPY", coreShare: 0, trail: 0.2, minOrder: 1 } }), 0, "100% to Richie: no SPY");
 });

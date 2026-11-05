@@ -23,11 +23,16 @@ You talk to him through your own Telegram bot, and a local dashboard shows every
 - **Has every buy checked twice.** Code checks the case against hard entry gates first. The case is refused if it is
   too old or priced too far from the live quote, or if a Kalshi bet lacks enough edge after fees. Then a second model
   reviews it and must answer PASS.
-- **Follows a written playbook.** The default (`src/playbook.md`) holds up to 3 momentum trades at a time, each about
-  a third of the account, with a 7% stop and a 14% target. Idle cash stays in cash. Kalshi bets are sized at a quarter
-  of the Kelly fraction and scaled by how well his past predictions were calibrated.
+- **Keeps most of the stock money in SPY, if you want.** You choose how much of the Robinhood account Richie trades
+  himself (`RICHIE_TRADING_PERCENT`, 20% by default). Code holds the rest in SPY: it buys from cash, at least $1 at a
+  time, and never sells it to fund a trade. Only you sell it, and `core off` stops the buying.
+- **Follows a written playbook.** The default (`src/playbook.md`) holds up to 2 momentum trades at a time in his
+  share. A stock or ETF exits only on a 20% trailing stop under its highest close, with no target or time limit.
+  Crypto keeps a 7% stop and a target. Kalshi bets are sized at a quarter of the Kelly fraction and scaled by how
+  well his past predictions were calibrated.
 - **Exits in plain code, not with the model.** A monitor checks every open position every minute (every 2 minutes for
-  crypto and Kalshi) and sells at the stop or the target. It never acts on a stale price.
+  crypto and Kalshi) and sells at the stop or the target. Once a day near the close it raises each trailing stop. It
+  never acts on a stale price.
 - **Trades Kalshi parlays.** He builds multi-leg NFL combos, asks market makers for a quote (RFQ), and buys only when
   his joint chance beats the quote by a set margin. His method (pricing each leg from the market, injury and weather
   checks, a filter that attacks every reason a leg wins, and correlation) is the included
@@ -65,6 +70,7 @@ buying, start a session, or sell a position, and nothing on it can buy. See [CON
 | `journal`, `kalshi journal` | His recent reasoning and research |
 | `run`, `kalshi` | Start a stock or Kalshi session now |
 | `pause`, `resume` | Stop or allow new buys (exits keep running) |
+| `core off`, `core on` | Stop or restart code's SPY buying (the SPY held stays) |
 | anything else | A normal conversation, answered with his look-only tools |
 
 ## Requirements
@@ -161,7 +167,11 @@ never places a trade. When it finishes, Richie is running in watch-only mode, an
    npm run watch
    ```
 
-10. **Read the playbook.** `src/playbook.md` is the strategy Richie follows. Change it to fit you before he trades.
+10. **Choose Richie's share and read the playbook.** Set `RICHIE_TRADING_PERCENT` in `.env` to the share of the
+    Robinhood account Richie trades himself, from 0 to 100 (20 if you leave it out). Code keeps the rest in SPY. A
+    bigger share is a bigger bet on Richie: in the long-history test every share trailed holding SPY, and the bigger
+    the share the more it trailed. `npm run check` shows the split. `src/playbook.md` is the strategy he follows.
+    Change it to fit you before he trades.
 
 11. **Go live.** The command below is the only process that trades. Send `status` to your bot to see him answer.
     Keep it running (in a terminal, `tmux`, a launchd agent on macOS, or a systemd service on Linux).
@@ -184,6 +194,7 @@ Everything is set with environment variables, listed in [.env.example](.env.exam
 
 | Variable | Default | What |
 | --- | --- | --- |
+| `RICHIE_TRADING_PERCENT` | `20` | Share of the Robinhood account Richie trades himself; code holds the rest in SPY |
 | `RICHIE_HOME` | `~/.richie` | Ledger, journal, lessons, logs, controls inbox, and secrets on non-Mac systems |
 | `RICHIE_MODEL` | `deepseek/deepseek-v4.1-flash` | OpenRouter model for sessions, chat and research |
 | `RICHIE_REVIEW_MODEL` | `~deepseek/deepseek-pro-latest` | Model that must PASS every buy and writes the weekly review |
@@ -214,7 +225,9 @@ What it showed (November 2026, [full table](docs/history-backtest.md)): the defa
 14% target, 20 days, 3 positions, idle cash in cash) ranked 82nd to 94th of 96 and trailed buying and holding SPY by
 7 to 10 points a year on every universe picked without hindsight. Letting winners run with a trailing stop did best,
 but only about 1 point a year better than SPY on two universes. On the 2014 large caps it was 7 points, all of it
-after 2021. The variants that led in the first half did not hold up in the second. Treat the playbook as an experiment, not an edge. A strategy version that passes the promotion check in
+after 2021. The variants that led in the first half did not hold up in the second. So the default now keeps most
+of the money in SPY and gives Richie a share with a trailing stop: 80% SPY and 20% Richie trailed SPY by 0.1 to 1.3
+points a year, and 35% and 65% by 0.2 to 0.7 over the full periods but 0.7 to 4.7 since 2015. Treat Richie's share as an experiment, not an edge. A strategy version that passes the promotion check in
 `config.mjs` is shown to you and goes live only on your approval.
 
 ## How it is built

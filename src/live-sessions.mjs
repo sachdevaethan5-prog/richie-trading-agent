@@ -22,9 +22,10 @@ import { plantedFlags, plantedWarning } from "./shared/safety.mjs";
 import { readSkill, SKILL_READ_TOOL } from "./shared/skills.mjs";
 import { DATA_DIR } from "./env.mjs";
 
-// The rebuild's own playbook (the owner chose core-satellite-1 on 2026-11-02, then "Keep in cash": cash-satellite-1, the
-// same satellites with no SPY core); the legacy playbook.md is no longer used.
-export const PLAYBOOK = fileURLToPath(new URL("./playbook.md", import.meta.url)), PLAYBOOK_VERSION = "cash-satellite-1";
+// Richie's playbook, core-trail-1: an SPY core bought by code (DECIDED.stocks.coreShare of the account, set with
+// RICHIE_TRADING_PERCENT), the rest in up to 2 momentum satellites that exit on a 20% trailing stop. Earlier versions:
+// core-satellite-1, then cash-satellite-1 ("Keep in cash"), whose rules now run on paper only.
+export const PLAYBOOK = fileURLToPath(new URL("./playbook.md", import.meta.url)), PLAYBOOK_VERSION = "core-trail-1";
 const DATA = DATA_DIR;
 const JOURNAL = join(DATA, "journal.md"), LESSONS = join(DATA, "lessons.md");
 // OpenRouter model ids: FAST runs sessions, chat and research; SHARP reviews every buy and writes the weekly review.
@@ -248,29 +249,41 @@ export function parsePlaybook(text) {
 }
 
 // What the dashboard's Strategy view shows for live Richie. series: { SYMBOL: bars } (oldest first, SPY included).
-// The playbook (satellites, idle cash in cash) is scored as a whole portfolio beside SPY held and the SPY-core version.
+// core-trail-1 is coreShare SPY held plus a satellite sleeve (up to 2 momentum names, trailing stop, idle sleeve cash
+// in cash), scored as one portfolio beside SPY held and the old cash-satellite-1 rules (kept on paper only).
+export const satelliteRules = (s = DECIDED.stocks) => ({ signal: momentumSignal, slots: 2, useCore: false, stop: s.trail, trail: s.trail, target: Infinity, maxBars: Infinity, exitSma: 0 });
+export function coreTrail(series, { costs = {}, s = DECIDED.stocks } = {}) {
+  const sleeve = evaluatePortfolio(series, { ...satelliteRules(s), costs }), spy = series.SPY, base = spy[50].o * (1 + (costs.slippage || 0) + (costs.spread || 0) / 2);
+  const at = new Map(spy.map(b => [b.t, b.c]));
+  let peak = 1, maxDrawdown = 0;
+  for (const p of sleeve.curve) { const e = s.coreShare * at.get(p.t) / base + (1 - s.coreShare) * p.e; peak = Math.max(peak, e); maxDrawdown = Math.max(maxDrawdown, 1 - e / peak); }
+  const netReturn = s.coreShare * (spy.at(-1).c / base - 1) + (1 - s.coreShare) * sleeve.netReturn;
+  return { ...sleeve, netReturn, maxDrawdown, sleeve: sleeve.netReturn };
+}
 export function strategySummary({ series, playbook, missedRate, version = PLAYBOOK_VERSION, now = Date.now() }) {
-  const costs = { slippage: 0.0005, spread: 0.001 };
-  const live = evaluatePortfolio(series, { signal: momentumSignal, slots: 3, useCore: false, costs }), core = evaluatePortfolio(series, { signal: momentumSignal, slots: 3, costs });
-  const benchmark = live.benchmark, promotion = promotionCheck(live, { benchmark, missedRate });
+  const costs = { slippage: 0.0005, spread: 0.001 }, pc = Math.round(DECIDED.stocks.coreShare * 100);
+  const live = coreTrail(series, { costs }), old = evaluatePortfolio(series, { signal: momentumSignal, slots: 3, useCore: false, costs });
+  const benchmark = old.benchmark, promotion = promotionCheck(live, { benchmark, missedRate });
   const days = Math.round((series.SPY.at(-1).t - series.SPY[50].t) / 86400000);
-  const report = [`${version}: up to 3 momentum satellites with idle cash in cash, ${Object.keys(series).length - 1} names, about ${days} days of daily bars, after slippage and spread.`,
-    `This playbook: ${pct(live.netReturn)}, worst drop ${pct(live.maxDrawdown)}, ${live.count} trades, ${live.winRate == null ? "no" : pct(live.winRate)} won.`,
-    `With an SPY core (not used, the owner keeps cash): ${pct(core.netReturn)}, worst drop ${pct(core.maxDrawdown)}.`,
+  const report = [`${version}: ${pc}% SPY held, ${100 - pc}% in up to 2 momentum satellites with a ${DECIDED.stocks.trail * 100}% trailing stop, ${Object.keys(series).length - 1} names, about ${days} days of daily bars, after slippage and spread.`,
+    `This playbook: ${pct(live.netReturn)}, worst drop ${pct(live.maxDrawdown)}, ${live.count} satellite trades, ${live.winRate == null ? "no" : pct(live.winRate)} won (the satellite money alone: ${pct(live.sleeve)}).`,
+    `Old rules (3 satellites, 7% stop, 14% target, cash; paper only): ${pct(old.netReturn)}, worst drop ${pct(old.maxDrawdown)}.`,
     `SPY held: ${pct(benchmark)}.`,
+    "The names were picked knowing they did well, so this flatters any rule; the long-history test (docs/history-backtest.md) is the fairer one.",
     `Promotion check: ${promotion.pass ? "passes" : `does not pass (${promotion.reasons.join("; ")})`}.`].join("\n");
   const sections = parsePlaybook(playbook), rules = sections.flatMap(x => x.items);
-  return { version, status: "live since 2026-11-02", sample: false, asOf: now,
+  return { version, status: "live", sample: false, asOf: now,
     rules: rules.length ? rules : ["No playbook text found."], sections: sections.length ? sections : null,
-    gatesTitle: "Entry Gates (Kept Live)", gatesNote: "Applied in code to every buy before the DeepSeek review. A change after evaluation goes to the owner.",
+    gatesTitle: "Entry Gates (Kept Live)", gatesNote: "Applied in code to every buy before the DeepSeek review . A change after evaluation goes to the owner.",
     legacyGates: Object.entries(LEGACY_GATES).filter(([k]) => k !== "version").map(([k, g]) => ({ name: k, value: g.value, why: g.why })),
     evaluation: { label: "backtest", count: live.count, netReturn: live.netReturn, maxDrawdown: live.maxDrawdown, winRate: live.winRate, sampleNote: live.sampleNote, benchmark, report, promotion, days,
-      rows: [{ name: "This playbook (3 satellites, cash)", ret: live.netReturn, drop: live.maxDrawdown, trades: live.count, win: live.winRate },
-        { name: "With an SPY core (not used)", ret: core.netReturn, drop: core.maxDrawdown, trades: core.count, win: core.winRate },
+      rows: [{ name: `This playbook (${pc}% SPY + 2 satellites, trailing stop)`, ret: live.netReturn, drop: live.maxDrawdown, trades: live.count, win: live.winRate },
+        { name: "Old rules (3 satellites, cash; paper only)", ret: old.netReturn, drop: old.maxDrawdown, trades: old.count, win: old.winRate },
         { name: "SPY held", ret: benchmark, drop: null, trades: null, win: null }] },
-    summary: ["Idle cash stays in cash. Up to 3 momentum trades at a time, each about a third of the account.",
-      "Every buy passes the entry gates in code, then DeepSeek's review. Cash only.",
-      "Stops and targets are watched every minute in market hours and sold automatically at market.",
+    summary: [`About ${pc}% of the Robinhood account is held in SPY, bought by code from cash and never sold to fund a trade.`,
+      "The rest is Richie's: up to 2 momentum trades at a time, at least $1 each. Every buy passes the entry gates in code, then DeepSeek's review. Cash only.",
+      `A stock or ETF trade exits only on a ${DECIDED.stocks.trail * 100}% trailing stop under its highest close, watched every minute in market hours and sold at market. Crypto and positions bought under earlier rules keep their own stop and target.`,
+      "Each month the account is scored against the same money in SPY.",
       "Sessions: stocks 10:30 and 3:00 on weekdays, crypto 9:00 pm Mon, Wed, Fri, Kalshi noon, 5:00 and 10:00 pm daily."],
     decisionsTitle: "Decisions",
     openDecisions: [`Review: ${DECIDED.review === "deepseek" ? "DeepSeek PASS for every buy; exits need none" : DECIDED.review}.`,

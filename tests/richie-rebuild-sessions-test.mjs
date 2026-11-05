@@ -181,15 +181,41 @@ test("a version reaches the owner for approval only when it meets every promotio
   assert.match(r.reasons.join("; "), /12 trades, needs 30; net 2\.00% does not beat buy and hold 5\.00%; max drawdown 30\.0% is over 25%; 8\.0% of checks missed/);
 });
 
-// The owner, 2026-11-02, asked SPY or VOO for the core: "Keep in cash". A core buy is refused before any review.
-test("core buys are refused: idle cash stays in cash", async () => {
+// Playbook core-trail-1: code buys and holds the SPY core. A session can neither buy it (as the
+// core or as a satellite) nor sell it, and a refused buy never reaches the review.
+test("the SPY core belongs to code: a session cannot buy it, trade it as a satellite, or sell it", async () => {
   const L = ledger();
-  const core = o => ({ instrument: "SPY", instrumentType: "etf", side: "buy", role: "core", notional: 10, entry: 580, thesis: "Idle cash per the playbook", invalidation: "n/a", sources: [], ...o });
-  const quotes2 = async (b, i) => i === "SPY" ? { price: 580.4 } : liveQuote(b, i);
+  const core = o => ({ instrument: "SPY", instrumentType: "etf", side: "buy", role: "core", notional: 10, entry: 580, thesis: "Idle cash per the playbook", invalidation: "n/a", sources: SRC, ...o });
+  const quotes2 = async (b, i) => ["SPY", "VOO"].includes(i) ? { price: 580.4 } : liveQuote(b, i);
   let reviewed = 0;
-  for (const c of [core(), core({ instrument: "VOO" })])
-    assert.match(await handleProposal(c, { ledger: L, broker: "robinhood", review: async () => { reviewed++; return "PASS"; }, liveQuote: quotes2, now, adapter: neverAdapter }), /idle cash stays in cash/);
+  const run = c => handleProposal(c, { ledger: L, broker: "robinhood", review: async () => { reviewed++; return "PASS"; }, liveQuote: quotes2, now, adapter: neverAdapter });
+  assert.match(await run(core()), /code buys and holds the SPY core itself/);
+  assert.match(await run(core({ instrument: "VOO" })), /code buys and holds the SPY core itself/);
+  assert.match(await run(core({ role: "satellite", entry: 580.4 })), /SPY is the core, which code buys/);
   assert.equal(reviewed, 0); assert.equal(L.openOrders().length, 0);
+  L.run(`INSERT INTO positions (id, broker, instrument, instrument_type, side, quantity, cost_basis, fees, opened_at, status, plan, protection_mode, sample)
+    VALUES ('robinhood:SPY:long', 'robinhood', 'SPY', 'etf', 'long', 0.01, 5.8, 0, ?, 'open', '{"role":"core"}', 'none', 0)`, NOW);
+  assert.match(await run({ instrument: "SPY", instrumentType: "etf", side: "sell", quantity: 0.01, thesis: "Raise cash", invalidation: "", sources: [] }), /SPY is the core, held long term\. Only the owner sells it/);
+});
+
+// A stock or ETF satellite exits only on code's 20% trailing stop: the case needs no stop or target, the reviewer is
+// told the real exit, and the order carries the trailing plan from the live price. Crypto keeps its case stop.
+test("a stock satellite gets the trailing-stop plan from the live price; crypto keeps its own stop", async () => {
+  const { EXECUTION_LEASE } = await import("../src/execution.mjs");
+  const L = ledger(), placed = [];
+  L.lease(EXECUTION_LEASE, "t", 60000);
+  const adapter = { place: async o => { placed.push(o); throw Object.assign(Error("test stop"), { rejected: true }); } };
+  const seen = [];
+  const out = await handleProposal(stockCase({ stop: undefined, target: undefined }), { ledger: L, broker: "robinhood", review: async c => { seen.push(c); return "PASS: fine"; }, liveQuote, now, adapter, mode: "live", owner: "t" });
+  assert.match(out, /^Order rejected/);
+  assert.equal(seen[0].stop, undefined); assert.equal(seen[0].target, undefined);
+  assert.match(seen[0].exit, /20% trailing stop/);
+  assert.deepEqual(placed[0].plan, { role: "satellite", entry: 284.1, high: 284.1, trail: 0.2, stop: 227.28, target: null, source: "session case" });
+  // Still gated: two sources, a thesis, the live price.
+  assert.match(gateProblem({ ...stockCase({ stop: undefined, target: undefined, sources: SRC.slice(0, 1) }), broker: "robinhood" }, { price: 284.1 }), /at least 2 sources/);
+  assert.match(gateProblem({ ...stockCase({ stop: undefined, target: undefined, entry: 300 }), broker: "robinhood" }, { price: 284.1 }), /5\.6% from the live price/);
+  // Crypto is not trailing: its case still needs a stop and target.
+  assert.match(gateProblem({ instrument: "BTC", instrumentType: "crypto", side: "buy", broker: "robinhood", entry: 90000, thesis: "x", invalidation: "y", sources: SRC, catalyst: "c", trend_30d: "up" }, { price: 90000 }), /the case needs stop/);
 });
 
 test("a session that runs out of steps still ends with a summary", async () => {

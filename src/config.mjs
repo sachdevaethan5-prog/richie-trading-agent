@@ -28,7 +28,23 @@ export const DECIDED = {
   dashboardControls: "built",        // pause/resume, run session, sell now (CONTROLS.md)
   telegram: "send-only",             // watch-only mode sends through Richie's bot and never reads it
   robinhoodSignIn: "own",            // one sign-in (signin.mjs); run only one of live.mjs and runner.mjs at a time
+  // Stocks (playbook core-trail-1): code keeps coreShare of the Robinhood account in the core, bought from cash and
+  // never sold to fund or rebalance. The rest is Richie's trading money: new stock and ETF satellites exit only on a
+  // trailing stop this far under the highest close. minOrder is Robinhood's smallest fractional order.
+  // You choose Richie's share with RICHIE_TRADING_PERCENT (see .env.example and the README).
+  stocks: { core: "SPY", coreShare: 1 - tradingPercent(process.env.RICHIE_TRADING_PERCENT) / 100, trail: 0.2, minOrder: 1 },
 };
+
+// RICHIE_TRADING_PERCENT: the share of the Robinhood account Richie trades himself, a whole number from 0 to 100.
+// The rest is held in SPY by code. 20 is the default: in the long-history test (docs/history-backtest.md) 20% trailed
+// SPY by 0.1 to 1.3 points a year, and a bigger share cost more (65%: 0.7 to 4.7 points a year since 2015).
+// 0 means all SPY; 100 means no core, the old "idle cash stays in cash".
+export function tradingPercent(value) {
+  if (value == null || String(value).trim() === "") return 20;
+  const n = Number(String(value).trim().replace(/%$/, ""));
+  if (!Number.isInteger(n) || n < 0 || n > 100) throw Error(`RICHIE_TRADING_PERCENT must be a whole number from 0 to 100 (got "${value}")`);
+  return n;
+}
 
 // Execution is observation-only unless a caller passes exactly "live". Only live.mjs does, started with --live.
 export const EXECUTION_MODE = "observe";

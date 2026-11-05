@@ -78,9 +78,12 @@ test("live Richie runs each control once, through the usual code, and says so on
   assert.equal(L.meta("paused"), "1"); assert.deepEqual(started, ["kalshi"]);
   add(3, "resume"); await run(); assert.equal(L.meta("paused"), "0");
   // Sell part, then the rest: the same market order a stop exit sends, at the live price.
+  // Held here as the core: the owner selling it from the dashboard turns code's core buying off.
+  L.run("UPDATE positions SET plan = ? WHERE id = ?", JSON.stringify({ role: "core" }), positionId("robinhood", "XLE"));
   add(4, "sell", { positionId: positionId("robinhood", "XLE"), quantity: 0.02 });
   await run();
   assert.deepEqual([placed[0].side, placed[0].quantity, placed[0].orderType, placed[0].limitPrice], ["sell", 0.02, "market", 66.9]);
+  assert.equal(L.meta("core"), "off");
   assert.equal(Number(L.position(positionId("robinhood", "XLE")).quantity.toFixed(6)), 0.039483);
   add(5, "sell", { positionId: positionId("robinhood", "XLE") });
   await run();
@@ -88,7 +91,7 @@ test("live Richie runs each control once, through the usual code, and says so on
   assert.equal(L.position(positionId("robinhood", "XLE")).status, "closed");
   assert.equal(L.all("SELECT why FROM trades WHERE instrument = 'XLE'")[0].why, "sold from the dashboard");
   assert.ok(inbox.recent().every(r => r.status === "done"));
-  assert.equal(told.length, 5); assert.match(told[3], /^Dashboard \(sell 0\.02 XLE\): Sell of 0\.02 XLE near \$66\.9: filled\./);
+  assert.equal(told.length, 5); assert.match(told[3], /^Dashboard \(sell 0\.02 XLE\): Sell of 0\.02 XLE near \$66\.9: filled\. Core buying is off until you send core on\./);
   assert.ok(L.all("SELECT * FROM events WHERE kind = 'control'").length === 5);
   await run(); assert.equal(placed.length, 2, "a done request never runs again");
 });

@@ -1,35 +1,39 @@
 # Richie's playbook
 
-Version cash-satellite-1 (2026-11-02). Rewritten from the evidence below; core-satellite-1 with the SPY core removed
-. What code enforces is not repeated here:
+Version core-trail-1, chosen after the long-history test (docs/history-backtest.md). It replaces cash-satellite-1,
+whose rules now run on paper only. What code enforces is not repeated here:
 cash only (an order plus fees never above the cash the broker reports), the entry gates (a case written at the live
 price, Kalshi edge of 5 cents after fees (15% of the price for a parlay), no chasing more than 2 cents), DeepSeek's PASS before every buy, no buys
-while paused, exits never larger than the holding. There is no per-trade, position-count, daily or drawdown cap:
-sizing below is strategy, and I follow it.
+while paused, exits never larger than the holding, the SPY core, and the trailing stops. There is no per-trade,
+position-count, daily or drawdown cap: sizing below is strategy, and I follow it.
 
 ## Goal
 The owner's aim is 5 to 10% a month. It is a target to measure against, not a promise and never a reason to force a
-trade. The best version tested (with an SPY core) made about 27% over 13 months, about 2% a month, in a market that mostly rose. Beat
-the S&P 500 after costs first; the monthly aim comes after that.
+trade. Over 22 years no tested rule beat SPY held (about 10% a year); the realistic first goal is to match SPY after
+costs, and every month the account is scored against the same money in SPY.
 
-## Idle cash stays in cash
-- The owner's choice: cash not in a satellite trade or a bet stays as cash. No SPY or other index core; code
-  refuses a core buy.
-- The cost, from the same test: the cash version made about 16% where the SPY core made about 27%, because cash sat
-  idle 80 to 90% of the time. The weekly review keeps both side by side; a return to a core goes to the owner.
+## The SPY core (code, not me)
+- The owner sets my share of the Robinhood account (RICHIE_TRADING_PERCENT, 20% unless they change it); the session
+  prompt states the split. The rest is SPY. Code buys it from cash in market hours, at least $1 at a time, and holds
+  it with no stop. I never buy it, never use it as a satellite, and never sell it: only the owner does.
+- Code never sells SPY to fund a satellite. Cash from a satellite's exit refills my share first; only what is over it
+  goes to SPY.
 
-## Satellite: momentum with stops, up to 3 at a time
-- Each satellite buy is about a third of the account (cash plus satellites). Three slots: two concentrated more
-  but rested on 20 trades, which is luck until shown otherwise; five diluted the edge.
+## Satellite: momentum, up to 2 at a time, my share
+- My money is the Robinhood cash code leaves beside the core. Up to 2 satellites at once, each about half of my share
+  and never under $1 (Robinhood's smallest fractional order). With only enough for one, one.
 - Buy only confirmed momentum: close above a rising 20-day average, the 20-day above the 50-day, a new 20-day
   closing high, and volume at least 1.5x the 20-day average. Below either average, or the 20-day falling, is a
   bounce, not a setup: pass and note it.
 - The sector must be in an uptrend too (its 20-day above its 50-day).
 - An earnings or news gap counts only if price makes a new high after the gap.
 - Liquid names only: large stocks and ETFs. Skip a spread wider than about 1% or thin volume.
-- Stop 7% under entry; target 14% (2x the stop), on a real level when one exists. Exit at the stop, the target, a
-  close under the 20-day average, a broken reason, or after 20 trading days, whichever comes first. Earnings or a
-  high RSI alone are not exit reasons.
+- The exit is code's: a stock or ETF exits only on a 20% trailing stop under its highest close since entry, which
+  starts 20% under the entry and only rises. No target, no time limit, no average exit: the test showed cutting
+  winners early is what lost to SPY. I do not write a stop or target for a stock or ETF case.
+- I sell a satellite early only when the invalidation written in its case has actually happened (a deal broke, a
+  fraud, guidance withdrawn), never on a dip, a high RSI or earnings alone.
+- Positions bought under earlier rules keep the stop and target they were bought with.
 - A blank or failed research check is a pass, never a buy. Missing data is not a signal.
 
 ## Crypto
@@ -59,13 +63,16 @@ the S&P 500 after costs first; the monthly aim comes after that.
 - Two to four legs with a real reason each. Most quotes carry the makers' margin on every leg: passing is normal.
 - A parlay is held to settlement: no stop, no target, nothing to sell into. Code refuses one with either.
 
-## Evidence (2026-11-02, 20 liquid names, 290 trading days of Robinhood daily bars, slippage and spread included)
-- SPY held: +14.1%. Old strategy (3 swing slots, idle cash in cash): +15.9%, worst drop 7.0%.
-- Core and satellite (this playbook): +27%, worst drop 6.9%, 29 trades, 48% won after costs.
-- Split in two: first half +19.6% (SPY +8.0%, old +11.6%); second half -0.8% (SPY +0.7%, old -1.5%). It wins
-  when the market rises and roughly matches it when flat. 29 trades is under the 30 the promotion check wants.
-- Other entries tested lost to these: letting winners run until a 50-day break, buying pullbacks to the 20-day,
-  50-day crossovers, and a market filter on SPY.
+## Evidence (docs/history-backtest.md, daily bars back to 1999, costs included)
+- The old rules (3 satellites, 7% stop, 14% target, 20-day limit, idle cash in cash) trailed SPY by 7 to 10 points a
+  year on every universe picked without hindsight, and ranked 82nd to 94th of 96 variants.
+- 80% SPY with a 20% momentum satellite on a 20% trailing stop, 2004 to 2026: about 10.2 to 10.4% a year against
+  SPY's 10.7%, with a slightly smaller worst drop (49 to 51% against 55%).
+- A bigger share costs more: 35% SPY and 65% satellite was 0.2 to 0.7 points a year under SPY over the full periods,
+  but 0.7 to 4.7 points under it since 2015. What my share buys is a live record of my judgment, which no backtest
+  can give.
+- The share grows only after 100 or more live trades show it beats the same money in SPY, and only on the owner's
+  yes. 30 trades cannot tell an edge from luck.
 
 ## Lessons kept from the old weekly reviews
 - The 20/50 trend filter is the best loss-avoider. Six closed paper losses broke it or lacked a fresh high.

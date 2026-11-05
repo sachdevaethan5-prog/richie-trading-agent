@@ -11,10 +11,10 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 import { LEDGER_FILE, LOG_FILE, secret } from "./env.mjs";
-import { SETTINGS, EXECUTION_MODE } from "./config.mjs";
-import { openLedger } from "./ledger.mjs";
+import { SETTINGS, EXECUTION_MODE, DECIDED } from "./config.mjs";
+import { openLedger, positionId, TERMINAL } from "./ledger.mjs";
 import { scheduler, monitorTick } from "./monitor.mjs";
-import { submitOrder, reconcile } from "./execution.mjs";
+import { submitOrder, reconcile, unspentAccount, cents } from "./execution.mjs";
 import { errorClass } from "./health.mjs";
 import { notifyDecision, orderMessage } from "./voice.mjs";
 import { robinhoodAdapter, kalshiAdapter } from "./adapters/brokers.mjs";
@@ -74,18 +74,28 @@ export function recordTicks(ledger, positions, rows, keep = 600) {
   }
 }
 
-// The playbook's two other exits, in code (they were left to sessions): near the close (from 10 minutes before it,
-// once a day) a satellite whose price is under its 20-day average exits, and one opened under this playbook exits
-// after 20 trading days. Core holdings are exempt; the time limit does not apply to positions the legacy bot bought.
+// The old playbook's two other exits, in code (they were left to sessions): near the close (from 10 minutes before it,
+// once a day) a satellite whose price is under its 20-day average exits, and one opened under that playbook exits
+// after 20 trading days. Core holdings and trailing-stop satellites (playbook core-trail-1) are exempt; the time
+// limit does not apply to positions the legacy bot bought.
 export function closeRuleExit(p, price, bars, now) {
   let plan = {}; try { plan = JSON.parse(p.plan || "{}"); } catch {}
-  if (plan.role === "core" || !Number.isFinite(price) || p.broker !== "robinhood" || p.instrument_type === "crypto") return null;
+  if (plan.role === "core" || plan.trail || !Number.isFinite(price) || p.broker !== "robinhood" || p.instrument_type === "crypto") return null;
   const today = new Date(now).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   const past = bars.filter(b => new Date(b.t).toLocaleDateString("en-CA", { timeZone: "America/New_York" }) < today);
   if (past.length >= 19 && price < (past.slice(-19).reduce((t, b) => t + b.c, 0) + price) / 20) return "close under the 20-day average";
   if (plan.source !== "legacy case" && Number.isFinite(p.opened_at) && past.filter(b => b.t > p.opened_at).length + 1 >= 20) return "20 trading days";
   return null;
 }
+// A trailing stop (playbook core-trail-1) follows the highest close since entry: once a day near the close, the price
+// then (the day's close, near enough) raises the high, and the stop rises to trail under it. It never falls. The
+// monitor sells at the stop like any other. Returns the new plan, or null when nothing moved.
+export function trailPlan(plan, price) {
+  if (!(plan?.trail > 0) || !Number.isFinite(price)) return null;
+  const high = Math.max(Number(plan.high) || 0, price), stop = Math.max(Number(plan.stop) || 0, cents(high * (1 - plan.trail)));
+  return high === plan.high && stop === plan.stop ? null : { ...plan, high, stop };
+}
+
 export async function closeRules({ ledger, exec, now = Date.now, open = marketOpen }) {
   const e = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", year: "numeric", month: "2-digit", day: "2-digit", hourCycle: "h23" }).formatToParts(now()).map(x => [x.type, x.value]));
   const day = `${e.year}-${e.month}-${e.day}`, m = Number(e.hour) * 60 + Number(e.minute), closeAt = (EARLY_CLOSE.has(day) ? 13 : 16) * 60;
@@ -101,6 +111,12 @@ export async function closeRules({ ledger, exec, now = Date.now, open = marketOp
     // Only a price from the last few minutes decides the close rule; an old one (a failed quote read) is no signal.
     const q = ledger.quote(p.broker, p.instrument), bars = JSON.parse(ledger.meta(`candles:${p.id}`) || "{}").bars || [];
     if (now() - (q?.as_of ?? 0) > 5 * MIN) continue;
+    let plan = {}; try { plan = JSON.parse(p.plan || "{}"); } catch {}
+    const trailed = trailPlan(plan, q.price);
+    if (trailed) {
+      ledger.run("UPDATE positions SET plan = ? WHERE id = ?", JSON.stringify(trailed), p.id);
+      if (trailed.stop !== plan.stop) ledger.event({ at: now(), kind: "exit", broker: p.broker, subject: p.instrument, text: `${p.instrument}: trailing stop raised to $${trailed.stop} (high $${trailed.high}).` });
+    }
     const why = closeRuleExit(p, q?.price, bars, now());
     if (!why || ledger.pendingFor(p.broker, p.instrument, "sell")) { mark(p.id); continue; }
     const order = { broker: p.broker, instrument: p.instrument, instrumentType: p.instrument_type, side: "sell", quantity: p.quantity, limitPrice: q.price, orderType: "market", plan: { why, signalPrice: q.price } };
@@ -111,6 +127,36 @@ export async function closeRules({ ledger, exec, now = Date.now, open = marketOp
     sent.push({ instrument: p.instrument, why, state: result.state });
   }
   return sent;
+}
+
+// The core (DECIDED.stocks): cash goes to SPY until SPY is coreShare of the Robinhood account,
+// capped by the cash. That leaves the other part for satellites: cash from a satellite's exit refills the satellite
+// money first, and only what is over it goes to the core. Code never sells the core to fund or rebalance. Under
+// Robinhood's $1 minimum, nothing is bought. account: unspent cash and the account value; coreValue: SPY held now.
+export function coreBuyAmount({ account, coreValue, s = DECIDED.stocks }) {
+  if (!Number.isFinite(account?.cash) || !Number.isFinite(account?.value) || !Number.isFinite(coreValue)) return 0;
+  const amount = cents(Math.min(account.cash, s.coreShare * account.value - coreValue));
+  return amount >= s.minOrder ? amount : 0;
+}
+// Off after the owner sells the core or sends "core off", until "core on". Live only, in market hours from 10:00 to 3:45 Eastern (not into the opening spreads or the close), never while any
+// Robinhood order is unresolved, and only on a fresh SPY price when SPY is already held. A notional market buy.
+export async function coreKeeper({ ledger, exec, now = Date.now, open = marketOpen, s = DECIDED.stocks }) {
+  if (exec?.mode !== "live" || ledger.meta("core") === "off" || !open(now())) return null;
+  const e = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now()).map(x => [x.type, x.value]));
+  const m = Number(e.hour) * 60 + Number(e.minute);
+  if (m < 10 * 60 || m > 15 * 60 + 45) return null;
+  const unresolved = ledger.all(`SELECT client_id FROM orders WHERE broker = 'robinhood' AND state NOT IN (${[...TERMINAL].map(() => "?").join(",")})`, ...TERMINAL);
+  if (unresolved.length) return null;
+  const held = ledger.position(positionId("robinhood", s.core, "long")), q = ledger.quote("robinhood", s.core);
+  const holding = held?.status === "open" && held.quantity > 0;
+  if (holding && !(now() - (q?.as_of ?? 0) <= 5 * MIN && q?.price > 0)) return null;
+  const order = { broker: "robinhood", instrument: s.core, instrumentType: "etf", side: "buy", orderType: "market",
+    plan: { role: "core", source: "core keeper", why: `cash to the ${s.core} core` } };
+  const amount = coreBuyAmount({ account: unspentAccount(ledger, order), coreValue: holding ? held.quantity * q.price : 0, s });
+  if (!amount) return null;
+  const result = await submitOrder({ ledger, adapter: exec.adapters.robinhood, order: { ...order, notional: amount }, mode: "live", owner: exec.owner, paused: exec.paused, now });
+  ledger.event({ at: now(), kind: "order", broker: "robinhood", subject: s.core, text: `Core: buy $${amount.toFixed(2)} of ${s.core}. ${result.state === "blocked" ? `Not sent: ${result.reason}` : `Order ${result.state}.`}` });
+  return { amount, state: result.state };
 }
 
 // Daily bars for the position drawer's chart (stocks and ETFs; Robinhood gives no crypto bars through this tool).
@@ -179,6 +225,7 @@ export function observerJobs({ ledger, readers, adapters, telegram = null, now =
       run: () => watch({ ledger, name: "monitor:crypto", filter: p => p.broker === "robinhood" && p.instrument_type === "crypto", reader: readers.robinhood, now, exec }) });
     jobs.push({ name: "candles", lane: "background", priority: 5, intervalMs: 60 * MIN, run: () => candles({ ledger, reader: readers.robinhood, now }) });
     if (exec) jobs.push({ name: "close rules", lane: "monitor-stocks", priority: 2, intervalMs: MIN, run: () => closeRules({ ledger, exec, now, open }) });
+    if (exec) jobs.push({ name: "core", lane: "monitor-stocks", priority: 3, intervalMs: 15 * MIN, run: () => coreKeeper({ ledger, exec, now, open }) });
   }
   if (readers.kalshi) jobs.push({ name: "monitor:kalshi", lane: "monitor-kalshi", priority: 1, intervalMs: SETTINGS.monitorIntervalMs.event_contract,
     run: () => watch({ ledger, name: "monitor:kalshi", filter: p => p.broker === "kalshi", reader: readers.kalshi, now, exec }) });

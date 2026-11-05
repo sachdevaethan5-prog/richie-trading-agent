@@ -96,6 +96,9 @@ async function sell(a, { ledger, exec, readers, now }) {
   const { submitOrder } = await import("./execution.mjs");   // loaded only in live Richie, never by the dashboard server
   const r = await submitOrder({ ledger, adapter: exec.adapters[p.broker], order, mode: exec.mode, owner: exec.owner, paused: exec.paused, now });
   const at = p.broker === "kalshi" ? `${Math.round(price * 100)}¢` : `$${price}`;
-  return r.state === "blocked" ? { status: "refused", result: `Not sent: ${r.reason}` }
-    : { status: "done", result: `Sell of ${quantity} ${p.instrument} near ${at}: ${r.state}.` };
+  if (r.state === "blocked") return { status: "refused", result: `Not sent: ${r.reason}` };
+  // The owner selling the core means they want the cash: code stops buying it back until they send "core on".
+  let role = null; try { role = JSON.parse(p.plan || "{}").role; } catch {}
+  if (role === "core") ledger.meta("core", "off");
+  return { status: "done", result: `Sell of ${quantity} ${p.instrument} near ${at}: ${r.state}.${role === "core" ? " Core buying is off until you send core on." : ""}` };
 }

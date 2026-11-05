@@ -25,7 +25,11 @@ in order. Read README.md first for what Richie is.
 3. **Demo.** Run `npm run demo` in the background, confirm http://127.0.0.1:8792 answers (for example
    `curl -s http://127.0.0.1:8792/api/snapshot | head -c 200`), tell the person to open it in a browser, then stop it.
 4. **Settings file.** Run `cp .env.example .env` if `.env` does not exist. Ask which brokers they want: Robinhood,
-   Kalshi or both.
+   Kalshi or both. If Robinhood, ask how much of that account Richie should trade himself, from 0 to 100% (the rest
+   is held in SPY by code and never sold to fund a trade). Tell them the default is 20%, that in the long-history test
+   every share trailed simply holding SPY and a bigger share trailed by more (20%: 0.1 to 1.3 points a year; 65%: 0.7 to
+   4.7 points a year since 2015), and that 100% means no SPY at all. They set `RICHIE_TRADING_PERCENT` in `.env`
+   themselves; `npm run check` shows the split.
 5. **OpenRouter.** Tell them to create a key at https://openrouter.ai/keys, add credit, and put it in
    `RICHIE_OPENROUTER` in `.env` themselves.
 6. **Telegram.** Walk them through README step 5: @BotFather `/newbot` for `RICHIE_TELEGRAM_TOKEN`, then message the

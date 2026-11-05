@@ -15,6 +15,9 @@ const name = process.argv[2];
 if (!name || name === "check") {
   console.log(`Data folder: ${DATA_DIR}`);
   for (const n of NAMES) console.log(`${n.padEnd(18)} ${await secret(n).then(() => "found", () => "missing")}`);
+  const { DECIDED } = await import("./config.mjs").catch(error => { console.log(`Trading share: ${error.message}`); process.exit(1); });
+  const core = Math.round(DECIDED.stocks.coreShare * 100);
+  console.log(`Trading share: Richie trades ${100 - core}% of the Robinhood account; ${core}% is held in SPY (RICHIE_TRADING_PERCENT).`);
   process.exit(0);
 }
 if (!["openrouter", "telegram-token", "telegram-chat-id"].includes(name)) {

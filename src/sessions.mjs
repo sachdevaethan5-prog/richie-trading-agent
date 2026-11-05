@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { EXECUTION_MODE, DECIDED } from "./config.mjs";
 import { sessionPrompt, chatPrompt } from "./prompts.mjs";
-import { submitOrder } from "./execution.mjs";
+import { submitOrder, cents } from "./execution.mjs";
 import { orderProblem, estimatedFee } from "./policy.mjs";
 import { brier } from "./strategy.mjs";
 import { positionId } from "./ledger.mjs";
@@ -20,17 +20,22 @@ export const PROPOSE_TRADE = { name: "propose_trade", description: "Propose one 
   parameters: { type: "object", additionalProperties: false, required: ["instrument", "side", "thesis", "invalidation", "sources"], properties: {
     instrument: { type: "string", description: "Ticker, crypto symbol, or Kalshi market ticker" }, instrumentType: { type: "string", enum: ["stock", "etf", "crypto", "event_contract"] },
     side: { type: "string", enum: ["buy", "sell"] }, outcomeSide: { type: "string", enum: ["yes", "no"], description: "Kalshi only" },
-    role: { type: "string", enum: ["satellite", "core"], description: "satellite: a momentum trade (the default). core is refused: idle cash stays in cash" },
+    role: { type: "string", enum: ["satellite", "core"], description: "satellite: a momentum trade (the default). core is refused: code buys and holds the SPY core itself" },
     quantity: { type: "number", description: "Shares, coins, or Kalshi contracts (Kalshi in steps of 0.01)" }, limitPrice: { type: "number" }, notional: { type: "number", description: "Dollar amount instead of quantity and limit (Robinhood only)" },
-    entry: { type: "number" }, stop: { type: "number" }, target: { type: "number" }, fair: { type: "number", description: "Kalshi: your chance your side wins, 0 to 1" },
+    entry: { type: "number" }, stop: { type: "number", description: "Not for a stock or ETF buy: code sets its exit (a trailing stop)" }, target: { type: "number", description: "Not for a stock or ETF buy" }, fair: { type: "number", description: "Kalshi: your chance your side wins, 0 to 1" },
     thesis: { type: "string" }, invalidation: { type: "string" }, resolves: { type: "string", description: "Kalshi: when and how it settles" },
     catalyst: { type: "string" }, trend_30d: { type: "string" }, sources: { type: "array", items: { type: "string" } } } } };
+
+// A stock or ETF satellite on Robinhood (playbook core-trail-1) exits only on a trailing stop that code sets and
+// moves; the case's own stop and target are not used. Crypto keeps its case stop and target.
+export const trailing = p => p.broker === "robinhood" && ["stock", "etf"].includes(p.instrumentType);
 
 // The kept legacy gates, in code before any model sees the case. live: { price, ask } for the proposal's side.
 export function gateProblem(p, live) {
   if (p.side === "sell") return null;   // exits are never gated
-  // No core: the owner keeps idle cash in cash (2026-11-02, "Keep in cash"; playbook cash-satellite-1).
-  if (p.role === "core") return "idle cash stays in cash; there is no core to buy";
+  // The core is bought by code (runner.mjs coreKeeper), never by a session, and is not a satellite name either.
+  if (p.role === "core") return `code buys and holds the ${DECIDED.stocks.core} core itself; propose satellites only`;
+  if (p.broker === "robinhood" && p.instrument === DECIDED.stocks.core) return `${DECIDED.stocks.core} is the core, which code buys; a satellite is another name`;
   if (p.broker === "kalshi" && isCombo(p.instrument)) {
     const problem = parlayProblem(p, live);
     if (problem) return problem;
@@ -39,8 +44,10 @@ export function gateProblem(p, live) {
     const problem = kalshiCaseProblem({ ticker: p.instrument, side: p.outcomeSide, thesis: p.thesis, resolves: p.resolves, invalidation: p.invalidation, price: p.limitPrice, fair: p.fair, sources: p.sources, stop: p.stop, target: p.target });
     return problem || kalshiPriceOffProblem(p.limitPrice, live?.ask);
   }
-  const problem = caseProblem({ symbol: p.instrument, kind: p.instrumentType, thesis: p.thesis, entry: p.entry, stop: p.stop, target: p.target, invalidation: p.invalidation, sources: p.sources, catalyst: p.catalyst, trend_30d: p.trend_30d });
-  return problem || entryOffProblem(Number(p.entry), live?.price, p.instrumentType === "crypto" ? "crypto" : "stock");
+  // With a trailing stop the legacy stop and target gates have nothing to check; the rest of the case still must hold.
+  const entry = Number(p.entry), exit = trailing(p) && entry > 0 ? { stop: entry * 0.95, target: entry * 1.05 } : { stop: p.stop, target: p.target };
+  const problem = caseProblem({ symbol: p.instrument, kind: p.instrumentType, thesis: p.thesis, entry: p.entry, ...exit, invalidation: p.invalidation, sources: p.sources, catalyst: p.catalyst, trend_30d: p.trend_30d });
+  return problem || entryOffProblem(entry, live?.price, p.instrumentType === "crypto" ? "crypto" : "stock");
 }
 
 // A parlay has no order book: it is bought by accepting a maker's quote on
@@ -112,8 +119,11 @@ async function proposal(p, { ledger, broker, review, liveQuote, mode, owner, ada
     orderType: broker === "robinhood" && Number.isFinite(Number(p.quantity)) && !Number.isInteger(Number(p.quantity)) ? "market" : undefined,
     // A sale's reason is what its trade row and lesson record (it was "sold" with nothing to learn from).
     plan: p.side === "sell" ? { why: String(p.thesis || "").replace(/\s+/g, " ").slice(0, 160) || "session exit", source: "session case" }
-      : p.role === "core" ? { role: "core", entry: p.entry ?? null, source: "playbook core" } : { stop: p.stop ?? null, target: p.target ?? null, entry: p.entry ?? p.limitPrice ?? null, source: "session case" } };
+      : { stop: p.stop ?? null, target: p.target ?? null, entry: p.entry ?? p.limitPrice ?? null, source: "session case" } };
   if (broker === "kalshi") order.instrument = String(p.instrument || "");
+  // Only the owner sells the core (the dashboard's sell now); a session's sale of it is refused.
+  if (broker === "robinhood" && order.side === "sell" && JSON.parse(ledger.position(positionId(broker, order.instrument, "long"))?.plan || "{}").role === "core")
+    return `Not sent: ${order.instrument} is the core, held long term. Only the owner sells it.`;
   // A stock or ETF market order placed while the market is closed waits for the open and can fill on a gap above the
   // price the cash check used, which on this limited-margin account would borrow. Crypto and Kalshi trade around the clock.
   if (broker === "robinhood" && order.side === "buy" && ["stock", "etf"].includes(order.instrumentType) && !marketOpen(now()))
@@ -125,6 +135,12 @@ async function proposal(p, { ledger, broker, review, liveQuote, mode, owner, ada
   if (order.side === "buy" && order.orderType === "market" && Number(order.limitPrice) > 0 && live?.price > Number(order.limitPrice)) order.limitPrice = live.price;
   const gate = gateProblem({ ...p, ...order }, live);
   if (gate) return `Not sent: ${gate}.`;
+  // The trailing exit, set from the live price (the case was checked against it above): the stop starts trail under
+  // the entry and only rises (runner.mjs trailPlan). No target, no time limit, no average exit.
+  if (order.side === "buy" && trailing(order)) {
+    const entry = Number(live?.price ?? p.entry), trail = DECIDED.stocks.trail;
+    order.plan = { role: "satellite", entry, high: entry, trail, stop: cents(entry * (1 - trail)), target: null, source: "session case" };
+  }
   if (broker === "kalshi" && order.side === "buy") {
     const problem = raisedWithoutEvidence(p, refused) || sizeProblem(p, ledger.account("kalshi"), kalshiCalibration(ledger));
     if (problem) return `Not sent: ${problem}.`;
@@ -133,7 +149,7 @@ async function proposal(p, { ledger, broker, review, liveQuote, mode, owner, ada
   let verdict = "exit";
   if (order.side === "buy") {
     if (DECIDED.review !== "deepseek") throw Error(`Unknown review setting ${DECIDED.review}`);
-    verdict = String(await review({ ...p, broker, livePrice: live?.price ?? null, liveAsk: live?.ask ?? null }).catch(error => `FAIL: the review did not answer (${error.message.slice(0, 80)})`)).trim();
+    verdict = String(await review({ ...p, ...(trailing(order) ? { stop: undefined, target: undefined, exit: `a ${DECIDED.stocks.trail * 100}% trailing stop under the highest close, set and watched by code` } : {}), broker, livePrice: live?.price ?? null, liveAsk: live?.ask ?? null }).catch(error => `FAIL: the review did not answer (${error.message.slice(0, 80)})`)).trim();
   }
   ledger.saveEvidence({ id: evidenceId, subject: order.instrument, role: "case", verdict, status: /^PASS|^exit$/.test(verdict) ? "complete" : "incomplete", strategyVersion, createdAt: now(),
     packet: { question: `${order.side} ${order.instrument}`, ...(broker === "kalshi" && Number.isFinite(Number(p.fair)) ? { fair: Number(p.fair), side: order.outcomeSide } : {}), items: (p.sources || []).map(s => ({ fact: "Cited in Richie's case", source: /^https?:\/\//.test(s) ? s : "", note: s, observedAt: now(), unknowns: [] })), countercase: p.invalidation, assumptions: [], thesis: p.thesis } });
@@ -208,7 +224,7 @@ Your own order records, newest first (these are the truth about your orders; Rob
 }
 
 // The DeepSeek reviewer (the only second opinion). model resolves an assistant message.
-export const REVIEWER = `You check a trading case for Richie, a small trading agent, before any money moves. Be strict but fair. Pass it only if the thesis is concrete and supported by the listed sources, the price is the live price given, the exit plan is sensible for the instrument's normal moves, and for Kalshi the fair chance is argued from evidence and beats the price after fees. For Kalshi, FAIL when the cited sources contradict each other on the outcome, and at a price of 90 cents or more pass only if published data already settles most of the outcome (a strong lean is not enough there, since a small error in the chance erases the edge). For a Kalshi parlay (instrument starting KXMVE), fair is the joint chance that every leg wins: FAIL unless the thesis lists each leg with its market price and Richie's chance, each chance stays near its market price unless named news justifies more, and linked legs are joined for correlation rather than just multiplied. Answer with one line: PASS: <reason> or FAIL: <what is missing>.`;
+export const REVIEWER = `You check a trading case for Richie, a small trading agent, before any money moves. Be strict but fair. Pass it only if the thesis is concrete and supported by the listed sources, the price is the live price given, the exit plan is sensible for the instrument's normal moves (a stock or ETF exits on a trailing stop that code sets, given as "exit"; judge the entry and the reason, not that rule), and for Kalshi the fair chance is argued from evidence and beats the price after fees. For Kalshi, FAIL when the cited sources contradict each other on the outcome, and at a price of 90 cents or more pass only if published data already settles most of the outcome (a strong lean is not enough there, since a small error in the chance erases the edge). For a Kalshi parlay (instrument starting KXMVE), fair is the joint chance that every leg wins: FAIL unless the thesis lists each leg with its market price and Richie's chance, each chance stays near its market price unless named news justifies more, and linked legs are joined for correlation rather than just multiplied. Answer with one line: PASS: <reason> or FAIL: <what is missing>.`;
 export const reviewer = model => async c => (await model([{ role: "system", content: REVIEWER }, { role: "user", content: JSON.stringify(c) }], []))?.content ?? "FAIL: no answer";
 
 // OpenRouter chat completions, with each call's cost passed to onCost. No key is read here.
